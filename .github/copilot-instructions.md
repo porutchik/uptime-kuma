@@ -108,7 +108,7 @@ npm run dev  # Frontend on port 3000, backend on port 3001
 - `server/monitor-types/` — one class per monitor type, registered in `server/uptime-kuma-server.ts` (`monitorTypeList`).
 - `server/notification-providers/` — one file per provider (110+), registered in `server/notification.js`.
 - `server/socket-handlers/` — Socket.IO event handlers (most of the real-time API surface).
-- `server/routers/` — Express routers: `api-router.js` (push/REST API, API-key auth), `status-page-router.js`, `better-auth-router.ts`.
+- `server/routers/` — Express routers: `api-router.js` (push/REST API, API-key auth), `mcp-router.ts` (`/mcp`, MCP tools bridged from the documented routes), `status-page-router.js`, `better-auth-router.ts`.
 - `server/modules/`, `server/util/`, `server/utils/knex/` — shared helpers.
 - `server/better-auth.ts` + `src/auth-client.ts` — authentication (Better Auth, v3).
 

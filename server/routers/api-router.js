@@ -28,6 +28,35 @@ const checkVersion = require("../check-version");
 const apiPaths = {};
 
 /**
+ * Every route declaring `resolve`, filled below as the routes register and read by the MCP router
+ * @type {Array<{method: string, path: string, operation: object}>}
+ */
+const apiOperations = [];
+
+/**
+ * Create the Express handler of a route that only declares `resolve`
+ * @param {object} operation OpenAPI operation with a `resolve` function
+ * @returns {Function} Express handler answering `{ ok: true, ...body }`
+ */
+function createRouteHandler(operation) {
+    return async (request, response) => {
+        try {
+            const body = await operation.resolve(request);
+            response.json({
+                ok: true,
+                ...body,
+            });
+        } catch (e) {
+            log.error("api", `Failed to run ${operation.operationId}: ` + e.message);
+            response.status(500).json({
+                ok: false,
+                msg: operation.errorMessage || "Internal server error",
+            });
+        }
+    };
+}
+
+/**
  * Create an Express router that also records the OpenAPI operation of each route.
  * The operation is passed as a plain object among the route handlers, e.g.
  * `router.get("/path", middleware, { summary, responses }, handler)`.
@@ -46,17 +75,30 @@ function createApiRouter() {
             const middleware = handlers.filter((handler) => handler !== operation);
 
             if (operation) {
+                // `resolve` and `errorMessage` describe the route, they are not part of the OpenAPI document
+                const documented = { ...operation };
+                delete documented.resolve;
+                delete documented.errorMessage;
+
                 apiPaths[path] = {
                     ...(apiPaths[path] || {}),
                     [method]: {
                         security: [{ bearerAuth: [] }],
-                        ...operation,
+                        ...documented,
                         responses: {
                             ...errorResponses,
                             ...operation.responses,
                         },
                     },
                 };
+
+                if (typeof operation.resolve === "function") {
+                    if (!operation.operationId) {
+                        throw new Error(`The route ${method.toUpperCase()} ${path} needs an operationId for MCP`);
+                    }
+                    apiOperations.push({ method, path, operation });
+                    middleware.push(createRouteHandler(operation));
+                }
             }
 
             return register(path, ...middleware);
@@ -164,65 +206,38 @@ const monitorSchema = z
 /*
  * Server Information
  */
-openAPIRouter.get(
-    "/api/info",
-    requireApiKey,
-    {
-        summary: "Get the server information",
-        description: "The same payload the dashboard receives from the `info` socket event.",
-        responses: {
-            200: okResponse("Server information", {
-                info: infoSchema,
-            }),
-        },
+openAPIRouter.get("/api/info", requireApiKey, {
+    operationId: "get_info",
+    summary: "Get the server information",
+    description: "The same payload the dashboard receives from the `info` socket event.",
+    errorMessage: "Failed to get the server information",
+    resolve: async () => ({
+        info: await getInfo(),
+    }),
+    responses: {
+        200: okResponse("Server information", {
+            info: infoSchema,
+        }),
     },
-    async (request, response) => {
-        try {
-            response.json({
-                ok: true,
-                info: await getInfo(),
-            });
-        } catch (e) {
-            log.error("api", "Failed to get the server information: " + e.message);
-            response.status(500).json({
-                ok: false,
-                msg: "Failed to get the server information",
-            });
-        }
-    }
-);
+});
 
 /*
  * Monitors
  */
-openAPIRouter.get(
-    "/api/monitors",
-    requireApiKey,
-    {
-        summary: "Get all monitors",
-        description: "The compact monitor list the dashboard receives after logging in, without secrets.",
-        responses: {
-            200: okResponse("Monitor list", {
-                monitors: z.array(monitorSchema),
-            }),
-        },
+openAPIRouter.get("/api/monitors", requireApiKey, {
+    operationId: "get_monitors",
+    summary: "Get all monitors",
+    description: "The compact monitor list the dashboard receives after logging in, without secrets.",
+    errorMessage: "Failed to get the monitors",
+    resolve: async () => ({
+        monitors: Object.values(await server.getMonitorJSONList(null, true)),
+    }),
+    responses: {
+        200: okResponse("Monitor list", {
+            monitors: z.array(monitorSchema),
+        }),
     },
-    async (request, response) => {
-        try {
-            const monitorList = await server.getMonitorJSONList(null, true);
-            response.json({
-                ok: true,
-                monitors: Object.values(monitorList),
-            });
-        } catch (e) {
-            log.error("api", "Failed to get the monitors: " + e.message);
-            response.status(500).json({
-                ok: false,
-                msg: "Failed to get the monitors",
-            });
-        }
-    }
-);
+});
 
 let openApiDocument;
 
@@ -965,5 +980,8 @@ async function isMonitorPublic(monitorID) {
 const parentRouter = express.Router();
 parentRouter.use(router);
 parentRouter.use(openAPIRouter);
+
+// Read by the MCP router, which bridges every `resolve` route to a tool
+parentRouter.apiOperations = apiOperations;
 
 module.exports = parentRouter;

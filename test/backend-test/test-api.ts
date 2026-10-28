@@ -261,6 +261,8 @@ test("API", async (t) => {
             assert.strictEqual(spec.paths["/api/info"].get.responses["401"].description, "Missing or invalid API key");
             assert.deepStrictEqual(spec.paths["/api/info"].get.security, [{ bearerAuth: [] }]);
             assert.deepStrictEqual(spec.paths["/api/monitors"].get.security, [{ bearerAuth: [] }]);
+            assert.strictEqual(spec.paths["/api/monitors"].get.operationId, "get_monitors");
+            assert.strictEqual(spec.paths["/api/info"].get.operationId, "get_info");
             assert.strictEqual(spec.paths["/api/monitors"].get.responses["200"].description, "Monitor list");
 
             const docsResponse = await fetch(`${baseUrl}/api/docs`, { headers });

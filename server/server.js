@@ -385,6 +385,10 @@ app.use(function (req, res, next) {
     const apiRouter = require("./routers/api-router");
     app.use(apiRouter);
 
+    // MCP Router
+    const mcpRouter = require("./routers/mcp-router");
+    app.use(mcpRouter);
+
     // Status Page Router
     const statusPageRouter = require("./routers/status-page-router");
     app.use(statusPageRouter);
