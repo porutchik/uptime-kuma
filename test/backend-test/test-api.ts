@@ -156,20 +156,22 @@ test("API", async (t) => {
 
         const httpServer = app.listen(0, "127.0.0.1");
         await new Promise((resolve) => httpServer.once("listening", resolve));
-        const url = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}/api/info`;
+        const baseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
+        const url = `${baseUrl}/api/info`;
+        const headers = { authorization: `Bearer ${apiKey}` };
 
         try {
             await Settings.set("apiEnabled", false);
-            const disabled = await fetch(url, {
-                headers: { authorization: `Bearer ${apiKey}` },
-            });
+            const disabled = await fetch(url, { headers });
+            const disabledDocs = await fetch(`${baseUrl}/api/docs`);
+            const disabledDocsBody = await disabledDocs.text();
 
             assert.strictEqual(disabled.status, 403);
+            assert.strictEqual(disabledDocs.status, 403);
+            assert.match(disabledDocsBody, /API is disabled/);
 
             await Settings.set("apiEnabled", true);
-            const response = await fetch(url, {
-                headers: { authorization: `Bearer ${apiKey}` },
-            });
+            const response = await fetch(url, { headers });
             const body = await response.json();
 
             assert.strictEqual(response.status, 200);
@@ -179,6 +181,73 @@ test("API", async (t) => {
         } finally {
             await new Promise((resolve) => httpServer.close(resolve));
         }
+    });
+
+    await t.test("GET /api/openapi.json documents /api/info and /api/docs serves the UI", async () => {
+        const { default: apiRouter } = await import("../../server/routers/api-router");
+        const app = express();
+        app.use(apiRouter);
+
+        const httpServer = app.listen(0, "127.0.0.1");
+        await new Promise((resolve) => httpServer.once("listening", resolve));
+        const baseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
+
+        try {
+            await Settings.set("apiEnabled", true);
+
+            const anonymousSpec = await fetch(`${baseUrl}/api/openapi.json`);
+            const anonymousDocs = await fetch(`${baseUrl}/api/docs`);
+            const anonymousDocsBody = await anonymousDocs.text();
+
+            assert.strictEqual(anonymousSpec.status, 401);
+            assert.strictEqual(anonymousDocs.status, 401);
+            assert.match(anonymousDocsBody, /Log in to Uptime Kuma/);
+
+            const headers = { authorization: `Bearer ${apiKey}` };
+            const specResponse = await fetch(`${baseUrl}/api/openapi.json`, { headers });
+            const spec = await specResponse.json();
+
+            assert.strictEqual(specResponse.status, 200);
+            assert.strictEqual(spec.openapi, "3.1.0");
+            assert.strictEqual(spec.paths["/api/info"].get.responses["200"].description, "Server information");
+            assert.strictEqual(spec.paths["/api/info"].get.responses["401"].description, "Missing or invalid API key");
+            assert.deepStrictEqual(spec.paths["/api/info"].get.security, [{ bearerAuth: [] }]);
+
+            const docsResponse = await fetch(`${baseUrl}/api/docs`, { headers });
+            const docs = await docsResponse.text();
+
+            assert.strictEqual(docsResponse.status, 200);
+            assert.match(docs, /<html/i);
+        } finally {
+            await new Promise((resolve) => httpServer.close(resolve));
+        }
+    });
+
+    await t.test("the API router keeps the existing badge and entry-page routes", async () => {
+        const { default: apiRouter } = await import("../../server/routers/api-router");
+        const paths: string[] = [];
+
+        /**
+         * Collect route paths, including the routes of nested routers
+         * @param {object} router Express router
+         * @returns {void}
+         */
+        function collect(router: any) {
+            for (const layer of router.stack) {
+                if (layer.route) {
+                    paths.push(layer.route.path);
+                } else if (layer.handle?.stack) {
+                    collect(layer.handle);
+                }
+            }
+        }
+
+        collect(apiRouter);
+
+        assert.ok(paths.includes("/api/entry-page"));
+        assert.ok(paths.includes("/api/badge/:id/status"));
+        assert.ok(paths.includes("/api/badge/:id/uptime/:duration?"));
+        assert.ok(paths.includes("/api/info"));
     });
 
     await t.test("GET /api/info accepts more than 10 requests per key", async () => {

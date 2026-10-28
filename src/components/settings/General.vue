@@ -227,6 +227,11 @@
                 <div class="form-text">
                     {{ $t("apiDescription") }}
                 </div>
+
+                <div v-if="settings.apiEnabled" class="form-text">
+                    {{ $t("apiDocumentation") }}:
+                    <a href="/api/docs" target="_blank" rel="noopener">/api/docs</a>
+                </div>
             </div>
 
             <!-- Chrome Executable -->
