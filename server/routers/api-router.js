@@ -12,18 +12,37 @@ const Monitor = require("../model/monitor");
 const dayjs = require("dayjs");
 const { UP, MAINTENANCE, DOWN, PENDING, flipStatus, log, badgeConstants } = require("../../src/util");
 const StatusPage = require("../model/status_page");
-const { UptimeKumaServer } = require("../uptime-kuma-server");
+const { UptimeKumaServer, getInfo } = require("../uptime-kuma-server");
 const { emitHeartbeat } = require("../heartbeat-emit");
 const { makeBadge } = require("badge-maker");
 const { Prometheus } = require("../prometheus");
 const { UptimeCalculator } = require("../uptime-calculator");
 const { Settings } = require("../settings");
+const { requireApiKey } = require("../auth");
 
 let router = express.Router();
 
 let cache = apicache.middleware;
 const server = UptimeKumaServer.getInstance();
 let io = server.io;
+
+/*
+ * Server Information
+ */
+router.get("/api/info", requireApiKey, async (request, response) => {
+    try {
+        response.json({
+            ok: true,
+            info: await getInfo(),
+        });
+    } catch (e) {
+        log.error("api", "Failed to get the server information: " + e.message);
+        response.status(500).json({
+            ok: false,
+            msg: "Failed to get the server information",
+        });
+    }
+});
 
 router.get("/api/entry-page", async (request, response) => {
     allowDevAllOrigin(response);

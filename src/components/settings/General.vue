@@ -210,6 +210,25 @@
                 </div>
             </div>
 
+            <!-- API & MCP -->
+            <div class="mb-4">
+                <label class="form-label">
+                    API and MCP
+                    <span class="badge bg-warning ms-1">Alpha</span>
+                </label>
+
+                <div class="form-check form-switch">
+                    <input id="apiEnabled" v-model="settings.apiEnabled" class="form-check-input" type="checkbox" />
+                    <label class="form-check-label" for="apiEnabled">
+                        {{ $t("Enable") }}
+                    </label>
+                </div>
+
+                <div class="form-text">
+                    {{ $t("apiDescription") }}
+                </div>
+            </div>
+
             <!-- Chrome Executable -->
             <div class="mb-4">
                 <label class="form-label" for="primaryBaseURL">
