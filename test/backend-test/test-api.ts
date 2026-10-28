@@ -183,6 +183,54 @@ test("API", async (t) => {
         }
     });
 
+    await t.test("GET /api/monitors returns the compact monitor list", async () => {
+        const monitor = R.dispense("monitor");
+        monitor.name = "api-monitor";
+        monitor.type = "http";
+        monitor.url = "https://example.com";
+        monitor.interval = 60;
+        monitor.active = 1;
+        monitor.weight = 3000;
+        await R.store(monitor);
+
+        const { default: apiRouter } = await import("../../server/routers/api-router");
+        const app = express();
+        app.use(apiRouter);
+
+        const httpServer = app.listen(0, "127.0.0.1");
+        await new Promise((resolve) => httpServer.once("listening", resolve));
+        const baseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
+
+        try {
+            await Settings.set("apiEnabled", true);
+            const response = await fetch(`${baseUrl}/api/monitors`, {
+                headers: { authorization: `Bearer ${apiKey}` },
+            });
+            const body = await response.json();
+
+            assert.strictEqual(response.status, 200);
+            assert.strictEqual(body.ok, true);
+
+            const entry = body.monitors.find((item: { id: number }) => item.id === monitor.id);
+
+            assert.strictEqual(entry.name, "api-monitor");
+            assert.strictEqual(entry.type, "http");
+            assert.strictEqual(entry.active, true);
+            assert.strictEqual(entry.interval, 60);
+            assert.strictEqual(entry.weight, 3000);
+            assert.strictEqual(entry.parent, null);
+            assert.deepStrictEqual(entry.childrenIDs, []);
+            assert.deepStrictEqual(entry.tags, []);
+            assert.deepStrictEqual(entry.path, ["api-monitor"]);
+            assert.strictEqual(entry.pathName, "api-monitor");
+            // The compact payload must not leak the monitor URL or other settings
+            assert.strictEqual("url" in entry, false);
+        } finally {
+            await new Promise((resolve) => httpServer.close(resolve));
+            await R.trash(monitor);
+        }
+    });
+
     await t.test("GET /api/openapi.json documents /api/info and /api/docs serves the UI", async () => {
         const { default: apiRouter } = await import("../../server/routers/api-router");
         const app = express();
@@ -212,6 +260,8 @@ test("API", async (t) => {
             assert.strictEqual(spec.paths["/api/info"].get.responses["200"].description, "Server information");
             assert.strictEqual(spec.paths["/api/info"].get.responses["401"].description, "Missing or invalid API key");
             assert.deepStrictEqual(spec.paths["/api/info"].get.security, [{ bearerAuth: [] }]);
+            assert.deepStrictEqual(spec.paths["/api/monitors"].get.security, [{ bearerAuth: [] }]);
+            assert.strictEqual(spec.paths["/api/monitors"].get.responses["200"].description, "Monitor list");
 
             const docsResponse = await fetch(`${baseUrl}/api/docs`, { headers });
             const docs = await docsResponse.text();
@@ -248,6 +298,7 @@ test("API", async (t) => {
         assert.ok(paths.includes("/api/badge/:id/status"));
         assert.ok(paths.includes("/api/badge/:id/uptime/:duration?"));
         assert.ok(paths.includes("/api/info"));
+        assert.ok(paths.includes("/api/monitors"));
     });
 
     await t.test("GET /api/info accepts more than 10 requests per key", async () => {

@@ -135,6 +135,32 @@ const infoSchema = z
     })
     .meta({ id: "Info" });
 
+const tagSchema = z
+    .object({
+        tag_id: z.number(),
+        monitor_id: z.number(),
+        value: z.string().nullable(),
+        name: z.string(),
+        color: z.string(),
+    })
+    .meta({ id: "Tag" });
+
+const monitorSchema = z
+    .object({
+        id: z.number(),
+        name: z.string(),
+        type: z.string(),
+        active: z.boolean(),
+        parent: z.number().nullable(),
+        childrenIDs: z.array(z.number()),
+        tags: z.array(tagSchema),
+        path: z.array(z.string()),
+        pathName: z.string(),
+        interval: z.number(),
+        weight: z.number().nullable(),
+    })
+    .meta({ id: "Monitor" });
+
 /*
  * Server Information
  */
@@ -161,6 +187,38 @@ openAPIRouter.get(
             response.status(500).json({
                 ok: false,
                 msg: "Failed to get the server information",
+            });
+        }
+    }
+);
+
+/*
+ * Monitors
+ */
+openAPIRouter.get(
+    "/api/monitors",
+    requireApiKey,
+    {
+        summary: "Get all monitors",
+        description: "The compact monitor list the dashboard receives after logging in, without secrets.",
+        responses: {
+            200: okResponse("Monitor list", {
+                monitors: z.array(monitorSchema),
+            }),
+        },
+    },
+    async (request, response) => {
+        try {
+            const monitorList = await server.getMonitorJSONList(null, true);
+            response.json({
+                ok: true,
+                monitors: Object.values(monitorList),
+            });
+        } catch (e) {
+            log.error("api", "Failed to get the monitors: " + e.message);
+            response.status(500).json({
+                ok: false,
+                msg: "Failed to get the monitors",
             });
         }
     }
